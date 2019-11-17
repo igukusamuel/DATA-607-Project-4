@@ -1,0 +1,759 @@
+---
+title: "Project 4  DATA 607 (CODE USING MODEL NAIVE BAYES)"
+author: "Team Project Members: Banu Boopalan, Samuel Kigamba, James Mundy, Alain T Kuiete"
+date: "11/16/2019"
+output:
+  html_document:
+    css:
+    highlight: pygments
+    theme: cerulean
+    toc: true
+    toc_float: true
+    code_folding: hide
+  ioslides_presentation: default
+  pdf_document: default
+  slidy_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(tm)
+library(SnowballC)
+library(ggplot2)
+library(wordcloud)
+library(caret)
+library(gbm)
+library(e1071)
+library(SparseM)
+library(caTools)
+library(randomForest)
+#library(tree)
+library(ipred)
+#library(glmnet)
+library(tau)
+library(devtools)
+#install.packages('quanteda')
+library(quanteda)
+```
+
+# PART 1 CODE (Find in this Part1 RPUBS link below): 
+
+Our Project Team 4 above (Banu Boopalan, Samuel Kigamba, James Mundy, Alain T Kuiete), we will submit 2 RPUB documents (RPUBS LINK PROVIDED BY EACH TEAM MEMBER). This is the first document representing the first model. In this code, we have performed data transformations, exploratory data analysis, visualizations using wordclouds, frequency plots on words, and performed Naive Bayes Model and reported the Confusion Matrix results for the Naive Bayes Model. We tried to plot the prediction model using plot and mosaicplot but we were not able draw the plot for to show the plot of the model which requires further understanding. Within the model we are able to create document term matrix, segment the train and test data and then run the model to report summary model statistics. Each team member will report a different accuracy due to the files read in.
+
+# PART 2 CODE (Submitted part of a separate RPUBS link) 
+
+Our Project Team 4 above (Banu Boopalan, Samuel Kigamba, James Mundy, Alain T Kuiete), we will submit 2 separate RPUB documents. The 2nd document link to RPUBS, we have performed data transformations, exploratory data analysis, visualizations using wordclouds, frequency plots on words, and performed SVM model and reported the Confusion Matrix results for the SVM model. We tried to plot the model using plot but we were not successful in representing a way to plot the model, The support vector #'s are high range so we have to dive deeper into how to represent and plot the model through plot or Kernlab pacakge or Kernfit. Within the model we are able to create document term matrix and term document matrix, segment the train and test data and then run the model to report summary model. The SVM reported an accuracy for each of our teammates will be different as we are reading in our own files from the directory. The SVM reported higher accuracy than the Naive Bayes upon first review.  
+
+Collaboration via POWERPOINT, GITHUB, GOTO MEETING along with weekly meetings on Tuesday, Friday.
+
+
+# Section : Ham files
+
+### Downloading the Dataset for Ham
+
+### Creating Ham Data Frame
+```{r}
+#ham.dir="C:\\DATA607\\Project4\\spamHam\\20021010_easy_ham (1).tar\\easy_ham"
+#ham.dir="C://Users//Banu//Documents//RScriptfiles//Project4//SpamHam//easyham//20030228_easy_ham//easy_ham"
+ham.dir="easy_ham"
+ham.file.names = list.files(ham.dir)
+
+str(ham.file.names)
+ham.file.names[1:15]
+
+ham_files = list.files(path = ham.dir, full.names = TRUE)
+no_of_ham_files = length(list.files(ham.dir, all.files = "FALSE", full.names = "TRUE"))
+print(paste("There are",no_of_ham_files,"spam files in the easy_ham folder."))
+#ham_files
+
+# List of docs
+ham.docs <- ham.file.names[1]
+for(i in 2:length(ham.file.names))
+{
+  filepath<-paste0(ham.dir, "/", ham.file.names[i])  
+  text <-readLines(filepath)
+  list1<- list(paste(text, collapse="\n"))
+  ham.docs = c(ham.docs,list1)
+}
+#head(ham.docs, 2)
+```
+
+
+### Extracting the Ham senders emails
+
+```{r}
+senders <- unlist(str_extract(ham.docs[2], "(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+for (i  in 3:length(ham.docs)) {
+  s <- unlist(str_extract(ham.docs[i],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+  senders <- c(senders, s)  
+}
+summary(senders)
+head(senders, 2)
+```
+
+### Creating a Ham Sender' Email Data Frame
+```{r}
+email.length <- nchar(senders[1])
+for (i in 2:length(senders)) {
+  email.length <-c(email.length,nchar(senders[i]))
+}
+sender.df <- tibble(email=senders, length=email.length)
+head(sender.df, 2)
+```
+
+### vizualizing the Length of Different Senders' Emails
+```{r}
+boxplot(sender.df$length)
+```
+
+
+### Grouping the Senders' emails by email address
+```{r}
+sen.email <- sender.df %>% 
+  group_by( new.email =email, length)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))
+```
+ 
+
+### visualizing the 10 most frequent Emails Ham  
+```{r}
+sender.df %>%
+  group_by(email) %>%
+  summarise(n=n())%>%
+  top_n(10)%>%
+  mutate(email = reorder(email, n)) %>%
+  ggplot(aes(email, n, fill = email)) +
+  geom_col(show.legend = FALSE)  +
+  labs(y = "Most Frequent Senders",
+       x = NULL) +
+  coord_flip()
+```
+
+
+### Example of a Ham File
+```{r}
+ham.docs[4]
+```
+### Using Regular Expressions to extract all the emails in the Ham Files
+```{r}
+emails <- unlist(str_extract_all(ham.docs[2],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+for (i  in 3:length(ham.docs)) {
+  s <- unlist(str_extract_all(ham.docs[i],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+  emails <- c(emails, s)  
+}
+summary(emails)
+```
+
+### Turning These Ham Emails to a Data Frame
+```{r}
+len <- nchar(emails[1])
+for (i in 2:length(emails)) {
+  len <-c(len, nchar(emails[i]))
+}
+ham.emails <- tibble(mail = 1:length(emails), emails, len)
+head(ham.emails, 2)
+```
+
+### visualizing the length of all Emails 
+```{r}
+boxplot(ham.emails$len)
+```
+
+
+### visualizing the 20 Most Frequent Emails
+```{r}
+ham.emails %>%
+  group_by(emails) %>%
+  summarise(n=n())%>%
+  top_n(20)%>%
+  mutate(emails = reorder(emails, n)) %>%
+  ggplot(aes(emails, n, fill = emails)) +
+  geom_col(show.legend = FALSE)  +
+  labs(y = "Most Frequent emails",
+       x = NULL) +
+  coord_flip()
+```
+
+
+## Body of the Email
+### Extracting words in the Bodies of All Emails
+```{r}
+#ham.emails <- ham.emails %>%
+  #unnest_tokens(word, text)%>%
+  #group_by(text) %>%
+  #mutate(n= n()) %>%
+  #ungroup()
+#ham.emails
+```
+
+
+###  Creating a Data Frame containing the words
+
+```{r}
+ham.list <- tibble(files = 1:length(ham.docs),
+                   text = ham.docs)
+```
+
+### Adding the Frequency of Words to the Data frame
+```{r}
+ham.block <- ham.list %>%
+  unnest_tokens(word, text)%>%
+  group_by(files) %>%
+  mutate(n= n()) %>%
+  ungroup()
+head(ham.block, 2)
+```
+
+
+### Organizing the Data frame and adding the Term Frequency(tf), Inverse Document Frequency of a term(idf), and the combining of two term(tf_idf)
+```{r}
+ham.block <- ham.block %>%
+  bind_tf_idf(word, files, n)
+ham.block <- ham.block %>%
+  arrange(desc(tf_idf))
+head(ham.block, 2)
+```
+
+### Cleaning the Data Frame, 
+We select only words with IDF greater than 0 and we remove words containing numbers
+```{r}
+ham.block2 <- ham.block %>% 
+  filter(idf>0,str_detect(word,"([^\\d.+\\w.+\\.\\,.+]+?)")) %>%
+  arrange(desc(tf_idf))
+head(ham.block2, 2)
+```
+
+#### Example of the sparcity of a word
+```{r}
+filter(ham.block2, word=="laptop's")
+```
+
+### Visualization of the 20 Most Relevant Words in the Bodies of Emails
+```{r}
+ham.block2%>%
+  arrange(desc(tf_idf)) %>%
+  top_n(20)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  ggplot(aes(word, tf_idf, fill = files)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf", title = "Most Relevant Words in the Body Messages") +
+  coord_flip()
+```
+
+--------------------------------------------------------------------------------
+
+\clearpage
+
+
+# Section 2: Spam Files
+
+### Loading the Spam files
+
+```{r}
+#spam.dir="C:\\DATA607\\Project4\\spamHam\\20021010_spam.tar\\spam"
+#spam.dir="C://Users//Banu//Documents//RScriptfiles//Project4//SpamHam//20050311_spam_2.tar//spam_2"
+spam.dir="spam_2"
+spam.file.names = list.files(spam.dir)
+
+spam_files = list.files(path = ham.dir, full.names = TRUE)
+no_of_spam_files = length(list.files(spam.dir, all.files = "FALSE", full.names = "TRUE"))
+print(paste("There are",no_of_spam_files,"spam emails in the spam_2 folder"))
+#spam_files
+
+# List of docs
+spam.docs <- spam.file.names[1]
+for(i in 2:length(spam.file.names))
+{
+  filepath<-paste0(spam.dir, "\\", spam.file.names[i])  
+  text <-readLines(filepath)
+  l<- list(paste(text, collapse="\n"))
+  spam.docs = c(spam.docs,l)
+}
+```
+
+### Example of a Spam Document
+```{r}
+spam.docs[7]
+```
+
+### Creating Spam Dataframe
+```{r}
+spam.list <- tibble(block = 1:length(spam.docs),
+                   text = spam.docs)
+```
+
+### Extracting Word from The Bodies of Spam Files
+```{r}
+spam.block <- spam.list %>%
+  unnest_tokens(word, text)%>%
+  group_by(block) %>%
+  mutate(n= n()) %>%
+  ungroup()
+```
+
+### Selecting the Most Frequent Words with TF_IDF
+```{r}
+spam.block <- spam.block %>%
+  bind_tf_idf(word, block, n)
+spam.block <- spam.block %>%
+  arrange(desc(tf_idf))
+head(spam.block)
+```
+
+
+### Cleaning The Spam List of Words
+```{r}
+spam.block2 <- spam.block %>% 
+  filter(idf>0,str_detect(word,"([^\\d.+\\w.+\\.\\,.+]+?)")) %>%
+  arrange(desc(tf_idf))
+head(spam.block2)
+```
+
+
+
+### Creating a Spam Sender' Email Data Frame
+```{r}
+spam.senders <- unlist(str_extract(spam.docs[2], "(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+for (i  in 3:length(spam.docs)) {
+  s <- unlist(str_extract(spam.docs[i],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+  spam.senders <- c(spam.senders, s)  
+}
+summary(spam.senders)
+head(spam.senders)
+```
+
+### Creating  a Spam Senders' Email Data Frame
+```{r}
+spam.email.len <- nchar(spam.senders[1])
+for (i in 2:length(spam.senders)) {
+  spam.email.len <-c(spam.email.len,nchar(spam.senders[i]))
+}
+spam.sender.df <- tibble(email=spam.senders, len=spam.email.len)
+head(spam.sender.df)
+```
+
+### visualizing the Length of Different Spam Senders' Emails
+```{r}
+boxplot(spam.sender.df$len)
+```
+
+
+### Grouping the Spam Senders' emails by email address
+```{r}
+spam.sen.email <- spam.sender.df %>% 
+  group_by( new.email =email, len)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))
+```
+ 
+### visualizing the 10 Most Relevant Spam Senders' Emails 
+```{r}
+spam.sender.df %>%
+  group_by(email) %>%
+  summarise(n=n())%>%
+  top_n(10)%>%
+  mutate(email = reorder(email, n)) %>%
+  ggplot(aes(email, n, fill = email)) +
+  geom_col(show.legend = FALSE)  +
+  labs(y = "Most Frequent Senders",
+       x = NULL) +
+  coord_flip()
+```
+
+
+### Example of Spam Document
+```{r}
+spam.docs[2]
+```
+
+
+```{r}
+spam.emails <- unlist(str_extract_all(spam.docs[2],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+for (i  in 3:length(spam.docs)) {
+  s <- unlist(str_extract_all(spam.docs[i],"(?<name>[\\w.-]+)\\@(?<domain>[-\\w+\\.\\w+]+)(\\.\\w+)?"))
+  spam.emails <- c(spam.emails, s)  
+}
+summary(spam.emails)
+```
+
+### visualizing the Length of Different Senders' Emails
+```{r}
+len <- nchar(spam.emails[1])
+for (i in 2:length(spam.emails)) {
+  len <-c(len, nchar(spam.emails[i]))
+}
+spam.emails <- tibble(mail = 1:length(spam.emails), spam.emails, len)
+head(spam.emails)
+```
+
+
+```{r}
+boxplot(spam.emails$len)
+```
+
+
+
+```{r}
+spam.emails %>%
+  group_by(spam.emails) %>%
+  summarise(n=n())%>%
+  top_n(20)%>%
+  mutate(spam.emails = reorder(spam.emails, n)) %>%
+  ggplot(aes(spam.emails, n, fill = spam.emails)) +
+  geom_col(show.legend = FALSE)  +
+  labs(y = "Most Frequent emails",
+       x = NULL) +
+  coord_flip()
+```
+
+
+
+### Visualization of the 10 Most Relevant Words in the Bodies of Spam Emails
+```{r}
+spam.block2%>%
+  top_n(10)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  mutate(block = reorder(block, tf_idf)) %>%
+  arrange(desc(tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = block)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf", title = "Most Relevant Words in the Bodies of Spam Email") +
+  coord_flip()
+```
+
+
+
+--------------------------------------------------------------------------------
+
+\clearpage
+
+
+
+# Spam Ham classification using Naivebayes Classifier
+
+We create an object/model that can loop through any list of documents and create a corpus for each.
+This way we avoid duplicating this code for each and every set of documents that we need to loop through.
+
+```{r}
+to_VCorpus <- function(file_path) {
+  corpus <- file_path %>% 
+    paste(., list.files(.), sep = "/") %>% 
+    lapply(readLines) %>% 
+    VectorSource() %>% 
+    VCorpus()
+}
+
+docmnt_clean <- function(corpus) {
+  corpus <- corpus %>% 
+    tm_map(removeNumbers) %>% 
+    tm_map(removePunctuation) %>% 
+    tm_map(tolower) %>% 
+    tm_map(PlainTextDocument) %>% 
+    tm_map(removeWords, stopwords("en")) %>% 
+    tm_map(stripWhitespace) %>% 
+    tm_map(stemDocument)
+return(corpus)
+}
+
+addTag <- function(corpus, tag, value) {
+  for (i in 1:length(corpus)){
+    meta(corpus[[i]], tag) <- value
+  }
+  return(corpus)
+}
+```
+
+### Create a corpus for each of the two email classification using the object model above
+
+```{r}
+#Ham
+Ham_Corpus <- ham.dir %>% 
+  to_VCorpus %>% 
+  docmnt_clean %>% 
+  addTag(tag = "emails", value = "ham")
+
+inspect(Ham_Corpus[1:5])
+head(Ham_Corpus)
+
+#Spam
+Spam_Corpus <- spam.dir %>% 
+  to_VCorpus %>% 
+  docmnt_clean %>% 
+  addTag(tag = "emails", value = "spam")
+
+inspect(Spam_Corpus[1:5])
+
+writeLines(as.character(Ham_Corpus[[2]]))
+writeLines(as.character(Ham_Corpus[[8]]))
+
+```
+### Create wordcloud for Ham and Spam corpus before cleanup using bing lexicon
+
+```{r}
+#TermDocumentMatrix
+docs <- Corpus(VectorSource(Ham_Corpus))
+dtm1 <- TermDocumentMatrix(docs)
+m <- as.matrix(dtm1)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+mydtm4 <- tidy(dtm1)
+str(mydtm4)
+mydtm_sentiments4 <- slice(mydtm4 , 1:60000) %>% inner_join(get_sentiments("bing"), by = c(term = "word"))
+str(mydtm_sentiments4)
+
+docs4 <- Corpus(VectorSource(Spam_Corpus))
+dtm5 <- TermDocumentMatrix(docs4)
+m5 <- as.matrix(dtm5)
+v5 <- sort(rowSums(m5),decreasing=TRUE)
+d5 <- data.frame(word = names(v5),freq=v5)
+head(d5, 10)
+
+#HamCorpus
+mydtm4 <- tidy(dtm1)
+str(mydtm4)
+mydtm_sentiments4 <- slice(mydtm4 , 1:100000) %>% inner_join(get_sentiments("bing"), by = c(term = "word"))
+str(mydtm_sentiments4)
+
+#SpamCorpus
+mydtm5 <- tidy(dtm5)
+str(mydtm5)
+mydtm_sentiments5 <- slice(mydtm5 , 1:100000) %>% inner_join(get_sentiments("bing"), by = c(term = "word"))
+str(mydtm_sentiments5)
+
+#Side By Side
+#Create two panels to add the word clouds to
+#par(mfrow=c(1,2))
+#set.seed(1234)
+plot.new()
+text(x=0.5, y=0.5, "Wordcloud using Bing Lexicon for Ham corpus")
+wordcloud(words = mydtm_sentiments4$term, freq = mydtm_sentiments4$count, min.freq = 50,          max.words=1000, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+plot.new()
+text(x=0.5, y=0.5, "Wordcloud using Bing Lexicon for Spam corpus")
+wordcloud(words = mydtm_sentiments5$term, freq = mydtm_sentiments5$count, min.freq = 50,          max.words=1000, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+
+```
+
+
+### Combine the two cleaned up corpus data into a single data frame
+
+```{r}
+
+ham_DtFr = as.data.frame(unlist(Ham_Corpus), stringsAsFactors = FALSE)
+ham_DtFr$type = "ham"
+colnames(ham_DtFr) = c("text", "type")
+
+spam_DtFr = as.data.frame(unlist(Spam_Corpus), stringsAsFactors = FALSE)
+spam_DtFr$type = "spam"
+colnames(spam_DtFr) = c("text", "type")
+
+combined_DtFr = rbind(ham_DtFr[1:1000,], spam_DtFr[1:1000,]) # Combined dataframe of both corpuses
+head(combined_DtFr, 10)
+
+final_corpus = c(Ham_Corpus, Spam_Corpus) # Combined Corpus
+inspect(final_corpus[1:5])
+
+```
+
+
+### Partition data into training set and test set in ratio of 70:30
+
+```{r}
+set.seed(100)
+combined_DtFr$text[combined_DtFr$text == ""] = "NaN"
+train_index = createDataPartition(combined_DtFr$type, p = 0.70, list = FALSE)
+corpus_train = combined_DtFr[train_index,]
+head(corpus_train)
+corpus_test = combined_DtFr[-train_index,]
+head(corpus_test, 10)
+
+```
+
+### Create a Document Term Matrix
+
+```{r}
+trainCorpus = Corpus(VectorSource(corpus_train$text))
+testCorpus = Corpus(VectorSource(corpus_test$text))
+
+train_clean_corpus <- tm_map(trainCorpus, removeNumbers)
+test_clean_corpus <- tm_map(testCorpus, removeNumbers)
+
+train_clean_corpus <- tm_map(train_clean_corpus, removePunctuation)
+test_clean_corpus <- tm_map(test_clean_corpus, removePunctuation)
+
+train_clean_corpus <- tm_map(train_clean_corpus, removeWords, stopwords())
+test_clean_corpus  <- tm_map(test_clean_corpus, removeWords, stopwords())
+
+train_clean_corpus<- tm_map(train_clean_corpus, stripWhitespace)
+test_clean_corpus<- tm_map(test_clean_corpus, stripWhitespace)
+
+corpus_train_dtm = DocumentTermMatrix(train_clean_corpus)
+corpus_test_dtm = DocumentTermMatrix(test_clean_corpus)
+
+```
+
+# Create Term Document Matrix and Plot wordcloud and sentiment
+
+```{r}
+#Wordcloud for train_clean_Corpus
+docs1 <- Corpus(VectorSource(train_clean_corpus))
+dtm2 <- TermDocumentMatrix(docs1)
+m <- as.matrix(dtm2)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+mydtm <- tidy(dtm2)
+str(mydtm)
+head(mydtm, 100)
+#slice sentiments of 1000 rows
+
+mydtm_sentiments <- slice(mydtm , 1:100000) %>% inner_join(get_sentiments("bing"), by = c(term = "word"))
+mydtm_sentiments
+str(mydtm_sentiments)
+
+mydtm_sentiments %>%
+  count(sentiment, term, wt = count) %>%
+  top_n(50) %>%
+  ungroup() %>%
+  mutate(term = reorder(term, n)) %>%
+  ggplot(aes(term, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip() 
+
+#Wordcloud for test_clean_Corpus
+docs2 <- Corpus(VectorSource(test_clean_corpus))
+dtm3 <- TermDocumentMatrix(docs2)
+m3 <- as.matrix(dtm3)
+v3 <- sort(rowSums(m3),decreasing=TRUE)
+d3 <- data.frame(word = names(v3),freq=v3)
+head(d3, 10)
+mydtm3 <- tidy(dtm3)
+str(mydtm3)
+head(mydtm3, 100)
+#slice sentiments of 1000 rows
+
+mydtm_sentiments3 <- slice(mydtm3 , 1:100000) %>% inner_join(get_sentiments("bing"), by = c(term = "word"))
+mydtm_sentiments3
+str(mydtm_sentiments3)
+
+
+#Side By Side
+#Create two panels to add the word clouds to
+#par(mfrow=c(1,2))
+
+plot.new()
+text(x=0.5, y=0.5, "Wordcloud using Bing Lexicon for Train corpus")
+wordcloud(words = mydtm_sentiments$term, freq = mydtm_sentiments$count, min.freq = 1, 
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+plot.new()
+text(x=0.5, y=0.5, "Wordcloud using Bing Lexicon for Test corpus")
+wordcloud(words = mydtm_sentiments3$term, freq = mydtm_sentiments3$count, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+### Define input variables 0 and 1 from string to integer
+
+```{r}
+convert_count = function(x) {
+  y = ifelse(x > 0, 1, 0)
+  y = factor(y, levels = c(0,1), labels = c(0,1))
+  y
+}
+```
+
+### Train the model and predict the outcome
+
+```{r}
+train = apply(corpus_train_dtm, 2, convert_count)
+test = apply(corpus_test_dtm, 2, convert_count)
+
+str(train)
+str(test)
+
+```
+
+
+
+--------------------------------------------------------------------------------
+
+\clearpage
+
+
+
+# Use NaiveBayes Model to train and test/predict the test data set
+
+```{r}
+
+classifier = naiveBayes(train, factor(corpus_train$type))
+pred = predict(classifier, newdata = test)
+
+classifier$apriori
+classifier$tables[1:15]
+classifier$levels
+classifier$call
+
+plot(pred)
+
+#Using SVM to classify emails
+
+#classifier_svm = svm(formula = type ~ .,
+                    # data = train,
+                    # type = 'C-classification',
+                    # kernel = 'linear')
+
+#model_svm = svm(type ~ ., data = train)
+
+#pred_svm = predict(classifier_svm, newdata = train)
+
+#confusionMatrix(predsvm, corpus_train$type)
+
+```
+
+
+
+#  Output in the form of a confusion matrix
+
+```{r}
+
+confusion_matrix = table(pred, corpus_test$type)
+confusion_matrix
+
+confMatrix1 <- confusionMatrix(pred, as.factor(corpus_test$type))
+confMatrix1
+
+```
+
+
+
+### A visual plot of the confusion matrix
+
+```{r}
+
+fourfoldplot(confusion_matrix, color = c("#CC6666", "#99CC99"),
+            conf.level = 0, margin = 1, main = "Confusion Matrix")
+
+```
+
+
+
+
+
