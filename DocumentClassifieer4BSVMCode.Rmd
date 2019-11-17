@@ -2,6 +2,8 @@
 title: "DATA 607 - Project 4 - Document Classifier (Using SVM Model)"
 author: "Project4 Team: Banu Boopalan, Samuel Kigamba, James Mundy, Alain T Kuiete"
 output:
+  pdf_document: default
+  ioslides_presentation: default
   html_document:
     css:
     highlight: pygments
@@ -9,8 +11,6 @@ output:
     toc: true
     toc_float: true
     code_folding: hide
-  ioslides_presentation: default
-  pdf_document: default
   slidy_presentation: default
 ---
 
